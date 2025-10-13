@@ -1,5 +1,6 @@
 # filepath: /Users/ichsannuur/Documents/Backend Project/cdk_tutorial/Layers/python/common.py
 import json
+
 import boto3
 import os
 import uuid
@@ -7,9 +8,10 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any
 
+from boto3.dynamodb.conditions import Key
+
 # AWS X-Ray tracing and PowerTools
-from aws_lambda_powertools import Tracer, Logger, Metrics
-from aws_lambda_powertools.metrics import MetricUnit
+from aws_lambda_powertools import Tracer, Logger
 
 # Initialize PowerTools
 tracer = Tracer()
@@ -40,6 +42,18 @@ class CreateHandler(DynamoDBBase):
         """Create a new item in DynamoDB"""
         if not data:
             raise ValueError("Item data is required")
+        
+        name = data.get('name')
+        if not name:
+            raise ValueError("Name is required")
+        
+        # Check if there's existing item with the same name
+        response = self.table.query(
+            IndexName='gsi-name',
+            KeyConditionExpression=Key('name').eq(name)
+        )
+        if response['Items']:
+            raise ValueError("Item with the same name already exists")
 
         # Generate unique ID and timestamp
         item_id = str(uuid.uuid4())
@@ -51,10 +65,6 @@ class CreateHandler(DynamoDBBase):
         tracer.put_metadata("input_data", data)
 
         logger.info("Creating new item", extra={"item_id": item_id, "data": data})
-
-        name = data.get('name')
-        if not name:
-            raise ValueError("Name is required")
 
         # Prepare item with validation
         item = {
@@ -72,6 +82,60 @@ class CreateHandler(DynamoDBBase):
 
             return {
                 'message': 'Item created successfully',
+                'item': item
+            }
+        except Exception as e:
+            # Add error tracking
+            tracer.put_annotation("success", False)
+            tracer.put_annotation("error", str(e))
+            logger.error("Failed to create item", extra={"item_id": item_id, "error": str(e)})
+            raise RuntimeError(f"Failed to create item: {str(e)}")
+        
+    
+    @tracer.capture_method
+    def update_item(self, item_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing item in DynamoDB"""
+        if not data:
+            raise ValueError("Item data is required")
+
+        # Generate unique ID and timestamp
+        timestamp = datetime.utcnow().isoformat()
+
+        # Add tracing annotations and metadata
+        tracer.put_annotation("operation", "update_item")
+        tracer.put_metadata("input_data", data)
+
+        name = data.get('name')
+        if not name:
+            raise ValueError("Name is required")
+
+        try:
+            # Check if item exists first
+            response = self.table.get_item(Key={'id': item_id})
+            if 'Item' not in response:
+                raise ValueError(f"Item with id {item_id} not found")
+            
+            # Update the item
+            self.table.update_item(
+                Key={'id': item_id},
+                UpdateExpression='SET #name = :name, updated_at = :updated_at',
+                ExpressionAttributeNames={'#name': 'name'},
+                ExpressionAttributeValues={
+                    ':name': name,
+                    ':updated_at': timestamp
+                }
+            )
+            
+            # Get the updated item to return
+            updated_response = self.table.get_item(Key={'id': item_id})
+            item = updated_response['Item']
+
+            # Add success metrics and logging
+            tracer.put_annotation("success", True)
+            logger.info("Item updated successfully", extra={"item_id": item_id})
+
+            return {
+                'message': 'Item updated successfully',
                 'item': item
             }
         except Exception as e:
@@ -142,8 +206,14 @@ def lambda_handler(event, context):
         
         # Parse body
         body = json.loads(event.get('body', '{}'))
-        result = create_handler.create_item(body)
-        
+
+        # check if there's an id in the body for update operation
+        if 'id' in body:
+            item_id = body.pop('id')
+            result = create_handler.update_item(item_id, body)
+        else:
+            result = create_handler.create_item(body)
+
         # Add success tracking
         tracer.put_annotation("request_success", True)
         logger.info("Create request processed successfully", extra={"result": result})
