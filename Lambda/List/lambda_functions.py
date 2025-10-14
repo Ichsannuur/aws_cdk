@@ -1,19 +1,29 @@
 from typing import Dict, Any
 from common import DynamoDBBase, APIResponse, tracer, logger
+from boto3.dynamodb.conditions import Attr
 
 
 class Handler(DynamoDBBase):
     """Handler class for CREATE operations on DynamoDB with X-Ray tracing"""
 
     @tracer.capture_method
-    def get_all_items(self) -> Dict[str, Any]:
+    def get_all_items(self, search: str = '') -> Dict[str, Any]:
         """Retrieve all items from DynamoDB"""
         try:
             # Add tracing annotations
             tracer.put_annotation("operation", "get_all_items")
             logger.info("Fetching all items from DynamoDB", extra={"table_name": self.table_name})
 
-            response = self.table.scan()
+            if search:
+                tracer.put_annotation("search_filter", search)
+                logger.info("Applying search filter", extra={"search": search})
+                # This is a Scan operation with a filter - less efficient for large tables
+                response = self.table.scan(
+                    FilterExpression=Attr('name').contains(search)
+                )
+            else:
+                response = self.table.scan()
+            
             items = response.get('Items', [])
 
             # Add success annotations and metadata
@@ -52,7 +62,13 @@ def lambda_handler(event, context):
         })
 
         # Perform the operation
-        result = handler.get_all_items()
+        query_params = event.get('queryStringParameters', {})
+
+        search = ''
+        if query_params:
+            search = query_params.get('search', '')
+
+        result = handler.get_all_items(search=search)
 
         # Add success tracking
         tracer.put_annotation("request_success", True)
