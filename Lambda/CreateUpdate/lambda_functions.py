@@ -19,11 +19,7 @@ class CreateHandler(DynamoDBBase):
             raise ValueError("Name is required")
         
         # Check if there's existing item with the same name
-        response = self.table.query(
-            IndexName='gsi-name',
-            KeyConditionExpression=Key('name').eq(name)
-        )
-        if response['Items']:
+        if self.is_name_exists(name):
             raise ValueError("Item with the same name already exists")
 
         # Generate unique ID and timestamp
@@ -75,19 +71,23 @@ class CreateHandler(DynamoDBBase):
         # Add tracing annotations and metadata
         tracer.put_annotation("operation", "update_item")
         tracer.put_metadata("input_data", data)
-
+        
+        # Check if item exists first
+        response = self.table.get_item(Key={'id': item_id})
+        if 'Item' not in response:
+            raise ValueError(f"Item with id {item_id} not found")
+        
+        # Validate name if it's being updated
         name = data.get('name')
         if not name:
             raise ValueError("Name is required")
+        
+        # Check if there's existing item with the same name
+        if self.is_name_exists(name):
+            raise ValueError("Item with the same name already exists")
+        item = response['Item']
 
-        try:
-            # Check if item exists first
-            response = self.table.get_item(Key={'id': item_id})
-            if 'Item' not in response:
-                raise ValueError(f"Item with id {item_id} not found")
-            
-            item = response['Item']
-
+        try:            
             # Update the item
             item["name"] = name
             item["updated_at"] = timestamp
@@ -105,12 +105,22 @@ class CreateHandler(DynamoDBBase):
                 'message': 'Item updated successfully',
                 'item': item
             }
+
         except Exception as e:
             # Add error tracking
             tracer.put_annotation("success", False)
             tracer.put_annotation("error", str(e))
             logger.error("Failed to create item", extra={"item_id": item_id, "error": str(e)})
             raise RuntimeError(f"Failed to create item: {str(e)}")
+        
+
+    def is_name_exists(self, name: str) -> bool:
+        """Check if an item with the given name already exists"""
+        response = self.table.query(
+            IndexName='gsi-name',
+            KeyConditionExpression=Key('name').eq(name)
+        )
+        return len(response.get('Items', [])) > 0
 
 
 @tracer.capture_lambda_handler

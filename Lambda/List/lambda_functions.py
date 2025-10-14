@@ -34,9 +34,6 @@ class Handler(DynamoDBBase):
             raise RuntimeError(f"Failed to fetch items: {str(e)}")
 
 
-
-
-
 @tracer.capture_lambda_handler
 def lambda_handler(event, context):
     """AWS Lambda handler function for LIST operations"""
