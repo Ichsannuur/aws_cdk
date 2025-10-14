@@ -3,14 +3,14 @@ import boto3
 import os
 from decimal import Decimal
 from typing import Dict, Any
+from boto3.dynamodb.conditions import Key
 
 # AWS X-Ray tracing and PowerTools
-from aws_lambda_powertools import Tracer, Logger, Metrics
+from aws_lambda_powertools import Tracer, Logger
 
 # Initialize PowerTools
 tracer = Tracer()
 logger = Logger()
-metrics = Metrics()
 
 
 class DynamoDBBase:
@@ -87,3 +87,15 @@ class APIResponse:
             'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
             'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
         }
+
+
+# Export commonly used items for easy import
+__all__ = [
+    'DynamoDBBase', 
+    'DecimalEncoder', 
+    'APIResponse', 
+    'tracer', 
+    'logger', 
+    'metrics',
+    'Key'
+]

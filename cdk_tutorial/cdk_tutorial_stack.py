@@ -32,6 +32,14 @@ class CdkTutorialStack(Stack):
             layer_version_arn="arn:aws:lambda:ap-southeast-1:460278301291:layer:GenericLayer:19"
         )
 
+        # Create common utilities layer from local code
+        common_layer = _lambda.LayerVersion(
+            self, "CommonUtilitiesLayer",
+            code=_lambda.Code.from_asset("Layers"),
+            compatible_runtimes=[_lambda.Runtime.PYTHON_3_9],
+            description="Common utilities layer containing DynamoDB base class, API responses, and encoders"
+        )
+
         # Create Lambda function with X-Ray tracing
         create_items = _lambda.Function(
             self, "CreateItems",
@@ -39,7 +47,7 @@ class CdkTutorialStack(Stack):
             code=_lambda.Code.from_asset(lambda_dir + 'CreateUpdate'),
             handler="lambda_functions.lambda_handler",
             role=lambda_role,
-            layers=[lambda_base_layer, generic_layer],
+            layers=[lambda_base_layer, generic_layer, common_layer],
             timeout=Duration.seconds(30),
             memory_size=128,
             tracing=_lambda.Tracing.ACTIVE,  # Enable X-Ray tracing
@@ -56,7 +64,7 @@ class CdkTutorialStack(Stack):
             code=_lambda.Code.from_asset(lambda_dir + 'List'),
             handler="lambda_functions.lambda_handler",
             role=lambda_role,
-            layers=[lambda_base_layer, generic_layer],
+            layers=[lambda_base_layer, generic_layer, common_layer],
             timeout=Duration.seconds(30),
             memory_size=128,
             tracing=_lambda.Tracing.ACTIVE,  # Enable X-Ray tracing
@@ -73,7 +81,7 @@ class CdkTutorialStack(Stack):
             code=_lambda.Code.from_asset(lambda_dir + 'Delete'),
             handler="lambda_functions.lambda_handler",
             role=lambda_role,
-            layers=[lambda_base_layer, generic_layer],
+            layers=[lambda_base_layer, generic_layer, common_layer],
             timeout=Duration.seconds(30),
             memory_size=128,
             tracing=_lambda.Tracing.ACTIVE,  # Enable X-Ray tracing

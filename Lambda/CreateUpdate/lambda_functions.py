@@ -1,37 +1,8 @@
-# filepath: /Users/ichsannuur/Documents/Backend Project/cdk_tutorial/Layers/python/common.py
 import json
-
-import boto3
-import os
 import uuid
 from datetime import datetime
-from decimal import Decimal
 from typing import Dict, Any
-
-from boto3.dynamodb.conditions import Key
-
-# AWS X-Ray tracing and PowerTools
-from aws_lambda_powertools import Tracer, Logger
-
-# Initialize PowerTools
-tracer = Tracer()
-logger = Logger()
-
-
-class DynamoDBBase:
-    """Base class for DynamoDB operations with X-Ray tracing"""
-
-    @tracer.capture_method
-    def __init__(self):
-        self.dynamodb = boto3.resource('dynamodb')
-        self.table_name = os.environ.get('TABLE_NAME')
-        if not self.table_name:
-            raise ValueError("TABLE_NAME environment variable is required")
-        self.table = self.dynamodb.Table(self.table_name)
-
-        # Add tracing metadata
-        tracer.put_metadata("dynamodb_table", self.table_name)
-        logger.info("DynamoDBBase initialized", extra={"table_name": self.table_name})
+from common import DynamoDBBase, APIResponse, tracer, logger, Key
 
 
 class CreateHandler(DynamoDBBase):
@@ -115,16 +86,12 @@ class CreateHandler(DynamoDBBase):
             if 'Item' not in response:
                 raise ValueError(f"Item with id {item_id} not found")
             
+            item = response['Item']
+
             # Update the item
-            self.table.update_item(
-                Key={'id': item_id},
-                UpdateExpression='SET #name = :name, updated_at = :updated_at',
-                ExpressionAttributeNames={'#name': 'name'},
-                ExpressionAttributeValues={
-                    ':name': name,
-                    ':updated_at': timestamp
-                }
-            )
+            item["name"] = name
+            item["updated_at"] = timestamp
+            self.table.put_item(Item=item)
             
             # Get the updated item to return
             updated_response = self.table.get_item(Key={'id': item_id})
@@ -144,47 +111,6 @@ class CreateHandler(DynamoDBBase):
             tracer.put_annotation("error", str(e))
             logger.error("Failed to create item", extra={"item_id": item_id, "error": str(e)})
             raise RuntimeError(f"Failed to create item: {str(e)}")
-
-
-class DecimalEncoder(json.JSONEncoder):
-    """JSON encoder for DynamoDB Decimal types"""
-    
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
-
-
-class APIResponse:
-    """Helper class for creating standardized API responses"""
-    
-    @staticmethod
-    def success(data: Dict[str, Any], status_code: int = 200) -> Dict[str, Any]:
-        """Create a successful response"""
-        return {
-            'statusCode': status_code,
-            'headers': APIResponse._get_cors_headers(),
-            'body': json.dumps(data, cls=DecimalEncoder)
-        }
-    
-    @staticmethod
-    def error(message: str, status_code: int = 400) -> Dict[str, Any]:
-        """Create an error response"""
-        return {
-            'statusCode': status_code,
-            'headers': APIResponse._get_cors_headers(),
-            'body': json.dumps({'error': message})
-        }
-    
-    @staticmethod
-    def _get_cors_headers() -> Dict[str, str]:
-        """Get CORS headers"""
-        return {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
-        }
 
 
 @tracer.capture_lambda_handler

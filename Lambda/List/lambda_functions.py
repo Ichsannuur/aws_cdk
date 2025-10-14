@@ -1,33 +1,5 @@
-# filepath: /Users/ichsannuur/Documents/Backend Project/cdk_tutorial/Layers/python/common.py
-import json
-import boto3
-import os
-from decimal import Decimal
 from typing import Dict, Any
-
-# AWS X-Ray tracing and PowerTools
-from aws_lambda_powertools import Tracer, Logger, Metrics
-from aws_lambda_powertools.metrics import MetricUnit
-
-# Initialize PowerTools
-tracer = Tracer()
-logger = Logger()
-
-
-class DynamoDBBase:
-    """Base class for DynamoDB operations with X-Ray tracing"""
-
-    @tracer.capture_method
-    def __init__(self):
-        self.dynamodb = boto3.resource('dynamodb')
-        self.table_name = os.environ.get('TABLE_NAME')
-        if not self.table_name:
-            raise ValueError("TABLE_NAME environment variable is required")
-        self.table = self.dynamodb.Table(self.table_name)
-
-        # Add tracing metadata
-        tracer.put_metadata("dynamodb_table", self.table_name)
-        logger.info("DynamoDBBase initialized", extra={"table_name": self.table_name})
+from common import DynamoDBBase, APIResponse, tracer, logger
 
 
 class Handler(DynamoDBBase):
@@ -62,45 +34,7 @@ class Handler(DynamoDBBase):
             raise RuntimeError(f"Failed to fetch items: {str(e)}")
 
 
-class DecimalEncoder(json.JSONEncoder):
-    """JSON encoder for DynamoDB Decimal types"""
-    
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
 
-
-class APIResponse:
-    """Helper class for creating standardized API responses"""
-    
-    @staticmethod
-    def success(data: Dict[str, Any], status_code: int = 200) -> Dict[str, Any]:
-        """Create a successful response"""
-        return {
-            'statusCode': status_code,
-            'headers': APIResponse._get_cors_headers(),
-            'body': json.dumps(data, cls=DecimalEncoder)
-        }
-    
-    @staticmethod
-    def error(message: str, status_code: int = 400) -> Dict[str, Any]:
-        """Create an error response"""
-        return {
-            'statusCode': status_code,
-            'headers': APIResponse._get_cors_headers(),
-            'body': json.dumps({'error': message})
-        }
-    
-    @staticmethod
-    def _get_cors_headers() -> Dict[str, str]:
-        """Get CORS headers"""
-        return {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
-        }
 
 
 @tracer.capture_lambda_handler
