@@ -8,12 +8,16 @@ from aws_cdk import (
     CfnOutput,
 )
 from constructs import Construct
+from config import get_config
 
 
 class CdkTutorialStack(Stack):
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, stage: str = None, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Get configuration for the specified stage
+        config = get_config(stage or "dev")
 
         lambda_role = iam.Role.from_role_arn(
             self, "LambdaRole",
@@ -51,10 +55,7 @@ class CdkTutorialStack(Stack):
             timeout=Duration.seconds(30),
             memory_size=128,
             tracing=_lambda.Tracing.ACTIVE,  # Enable X-Ray tracing
-            environment={
-                "TABLE_NAME": "ItemsTable",
-                "LOG_LEVEL": "INFO"
-            }
+            environment=config.lambda_env_vars
         )
 
         # List Lambda function with X-Ray tracing
@@ -68,10 +69,7 @@ class CdkTutorialStack(Stack):
             timeout=Duration.seconds(30),
             memory_size=128,
             tracing=_lambda.Tracing.ACTIVE,  # Enable X-Ray tracing
-            environment={
-                "TABLE_NAME": "ItemsTable",
-                "LOG_LEVEL": "INFO"
-            }
+            environment=config.lambda_env_vars
         )
 
         # Delete Lambda function with X-Ray tracing
@@ -85,16 +83,13 @@ class CdkTutorialStack(Stack):
             timeout=Duration.seconds(30),
             memory_size=128,
             tracing=_lambda.Tracing.ACTIVE,  # Enable X-Ray tracing
-            environment={
-                "TABLE_NAME": "ItemsTable",
-                "LOG_LEVEL": "INFO"
-            }
+            environment=config.lambda_env_vars
         )
 
         # Create API Gateway
         api = apigateway.RestApi(
             self, "CRUD-API",
-            rest_api_name="Simple CRUD API",
+            rest_api_name=f"Simple CRUD API - {config.stage_name}",
             deploy=False,
             description="Simple CRUD API with Lambda and DynamoDB",
         )
@@ -108,9 +103,9 @@ class CdkTutorialStack(Stack):
         rest_api_stage = apigateway.Stage(
             self, "Stage",
             deployment=rest_api_deployment,
-            stage_name="dev",
+            stage_name=config.stage_name,
             tracing_enabled=True,
-            data_trace_enabled=True,
+            data_trace_enabled=config.stage_name != "prod",
             logging_level=apigateway.MethodLoggingLevel.ERROR
         )
 
