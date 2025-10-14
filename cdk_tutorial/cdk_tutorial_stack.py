@@ -66,6 +66,23 @@ class CdkTutorialStack(Stack):
             }
         )
 
+        # Delete Lambda function with X-Ray tracing
+        delete_items = _lambda.Function(
+            self, "DeleteItems",
+            runtime=_lambda.Runtime.PYTHON_3_9,
+            code=_lambda.Code.from_asset(lambda_dir + 'Delete'),
+            handler="lambda_functions.lambda_handler",
+            role=lambda_role,
+            layers=[lambda_base_layer, generic_layer],
+            timeout=Duration.seconds(30),
+            memory_size=128,
+            tracing=_lambda.Tracing.ACTIVE,  # Enable X-Ray tracing
+            environment={
+                "TABLE_NAME": "ItemsTable",
+                "LOG_LEVEL": "INFO"
+            }
+        )
+
         # Create API Gateway
         api = apigateway.RestApi(
             self, "CRUD-API",
@@ -94,16 +111,25 @@ class CdkTutorialStack(Stack):
         # Add /items resource
         items_resource = api.root.add_resource("items")
         create_resource = items_resource.add_resource("create")
+        # Add path parameter for delete: /items/{id}
+        delete_resource = items_resource.add_resource("{id}")
+
+        # Enable CORS for /items
+        items_resource.add_cors_preflight(
+            allow_origins=apigateway.Cors.ALL_ORIGINS,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"]
+        )
 
         # Enable CORS for /items/create
-        items_resource.add_cors_preflight(
+        create_resource.add_cors_preflight(
             allow_origins=apigateway.Cors.ALL_ORIGINS,
             allow_methods=["POST", "OPTIONS"]
         )
 
-        create_resource.add_cors_preflight(
+        # Enable CORS for /items/{id}
+        delete_resource.add_cors_preflight(
             allow_origins=apigateway.Cors.ALL_ORIGINS,
-            allow_methods=["POST", "OPTIONS"]
+            allow_methods=["DELETE", "POST", "OPTIONS"]
         )
 
         # Add methods to /items
@@ -116,6 +142,12 @@ class CdkTutorialStack(Stack):
         create_resource.add_method(
             "POST",
             apigateway.LambdaIntegration(create_items),
+        )
+
+        # Add methods to /items/{id}
+        delete_resource.add_method(
+            "DELETE",
+            apigateway.LambdaIntegration(delete_items),
         )
 
         # Output the API endpoint
